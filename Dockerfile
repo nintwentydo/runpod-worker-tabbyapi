@@ -1,29 +1,43 @@
-# Base image -> https://github.com/runpod/containers/blob/main/official-templates/base/Dockerfile
-# DockerHub -> https://hub.docker.com/r/runpod/base/tags
-FROM runpod/base:0.4.0-cuda11.8.0
+ARG BUILDKIT_SBOM_SCAN_CONTEXT=true
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 
-# The base image comes with many system dependencies pre-installed to help you get started quickly.
-# Please refer to the base image's Dockerfile for more information before adding additional dependencies.
-# IMPORTANT: The base image overrides the default huggingface cache location.
+# Use Runpod's base image with CUDA 12.4.1
+FROM runpod/base:0.6.2-cuda12.4.1 as build-000
 
+# Set Github args
+ARG GIT_REPO=https://github.com/nintwentydo/tabbyAPI.git
+ARG DO_PULL=true
+ENV DO_PULL $DO_PULL
 
-# --- Optional: System dependencies ---
-# COPY builder/setup.sh /setup.sh
-# RUN /bin/bash /setup.sh && \
-#     rm /setup.sh
+# Set the working directory in the container
+WORKDIR /app
 
+# Copy model
+#COPY src/models/pixtral-12b-exl2-8.0bpw /app/models/pixtral-12b-exl2-8.0bpw
 
-# Python dependencies
-COPY builder/requirements.txt /requirements.txt
-RUN python3.11 -m pip install --upgrade pip && \
-    python3.11 -m pip install --upgrade -r /requirements.txt --no-cache-dir && \
-    rm /requirements.txt
+# Upgrade pip
+RUN pip3.11 install --no-cache-dir -r builder/requirements.txt
 
-# NOTE: The base image comes with multiple Python versions pre-installed.
-#       It is reccommended to specify the version of Python when running your code.
+# Update repo
+RUN if [ ${DO_PULL} ]; then \
+    git init && \
+    git remote add origin $GIT_REPO && \
+    git fetch origin && \
+    git pull origin main && \
+    echo "Pull finished"; fi
 
+# Install packages specified in pyproject.toml cu121
+RUN pip3.11 install --no-cache-dir .[cu121,extras]
 
-# Add src files (Worker Template)
-ADD src .
+# Copy the sample configuration and adjust the host to 0.0.0.0
+RUN cp -av src/config.yml /app/models/config.yml
 
-CMD python3.11 -u /handler.py
+# Copy the handler.py script into the container
+COPY src/handler.py /app/handler.py
+
+# Copy the start.sh script and make it executable
+COPY src/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# Set the command to run when the container starts
+CMD ["/bin/bash", "/app/start.sh"]
