@@ -21,18 +21,18 @@ async def close_session():
 # Register the close_session coroutine to run on exit
 atexit.register(lambda: asyncio.get_event_loop().run_until_complete(close_session()))
 
-def wait_for_service(url, max_retries=1000, delay=0.5):
+async def wait_for_service(url, max_retries=1000, delay=0.5):
     retries = 0
     while retries < max_retries:
         try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                return
-            else:
-                print(f"Service status code: {response.status_code}. Retrying...")
-        except requests.exceptions.RequestException:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    return
+                else:
+                    print(f"Service status code: {response.status}. Retrying...")
+        except aiohttp.ClientError:
             print("Service not ready yet. Retrying...")
-        time.sleep(delay)
+        await asyncio.sleep(delay)
         retries += 1
     raise Exception("Service not available after max retries.")
 
@@ -75,7 +75,8 @@ class OpenAITabbyEngine:
             async for response in self._handle_generation_request(route, data, headers):
                 yield response
         else:
-            yield json.dumps({"error": f"Unsupported route: {route}"}) + "\n"
+            error_message = {"error": f"Unsupported route: {route}"}
+            yield json.dumps(error_message) + "\n\n"
 
     async def _handle_generic_request(self, route, data=None, method='GET', headers=None):
         endpoint = self.base_url + route
@@ -83,21 +84,25 @@ class OpenAITabbyEngine:
             if method == 'GET':
                 async with session.get(endpoint, headers=headers, timeout=300) as response:
                     if response.status != 200:
-                        yield {"error": await response.text()}
+                        error_json = {"error": await response.text()}
+                        yield json.dumps(error_json) + "\n\n"
                         return
                     result = await response.json()
-                    yield result
+                    yield json.dumps(result) + "\n\n"
             elif method == 'POST':
                 async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                     if response.status != 200:
-                        yield {"error": await response.text()}
+                        error_json = {"error": await response.text()}
+                        yield json.dumps(error_json) + "\n\n"
                         return
                     result = await response.json()
-                    yield result
+                    yield json.dumps(result) + "\n\n"
             else:
-                yield {"error": f"Unsupported HTTP method: {method}"}
+                error_json = {"error": f"Unsupported HTTP method: {method}"}
+                yield json.dumps(error_json) + "\n\n"
         except Exception as e:
-            yield {"error": str(e)}
+            error_json = {"error": str(e)}
+            yield json.dumps(error_json) + "\n\n"
 
     async def _handle_generation_request(self, route, data, headers):
         endpoint = self.base_url + route
@@ -105,8 +110,8 @@ class OpenAITabbyEngine:
         try:
             async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                 if response.status != 200:
-                    error_json = json.dumps({"error": await response.text()})
-                    yield f"{error_json}\n\n"  # No 'data: ' prefix
+                    error_json = {"error": await response.text()}
+                    yield json.dumps(error_json) + "\n\n"
                     return
 
                 if stream:
@@ -114,33 +119,40 @@ class OpenAITabbyEngine:
                         try:
                             decoded_line = line.decode('utf-8').strip()
                             if decoded_line:
-                                yield f"{decoded_line}\n\n"  # No 'data: ' prefix
+                                # Check if the line starts with "data: "
+                                if decoded_line.startswith("data: "):
+                                    data_content = decoded_line[6:]
+                                    if data_content == "[DONE]":
+                                        continue  # Let RunPod handle '[DONE]'
+                                    yield f"{data_content}\n\n"
+                                else:
+                                    # For any other lines, yield as is
+                                    yield f"{decoded_line}\n\n"
                         except Exception as e:
-                            error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
-                            yield f"{error_json}\n\n"  # No 'data: ' prefix
-                    # Removed: yield "[DONE]\n"  # Let RunPod handle it
+                            error_json = {"error": f"Failed to decode stream data: {str(e)}"}
+                            yield json.dumps(error_json) + "\n\n"
                 else:
                     result = await response.json()
-                    yield f"{json.dumps(result)}\n\n"  # No 'data: ' prefix
+                    yield json.dumps(result) + "\n\n"
         except Exception as e:
-            error_json = json.dumps({"error": str(e)})
-            yield f"{error_json}\n\n"  # No 'data: ' prefix
+            error_json = {"error": str(e)}
+            yield json.dumps(error_json) + "\n\n"
 
-async def async_generator_handler(job):
+async def handler(job):
     job_input = JobInput(job['input'])
     if not job_input.openai_route or not isinstance(job_input.openai_input, (dict, type(None))):
-        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}) + "\n\n"
+        error_message = {"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}
+        yield json.dumps(error_message) + "\n\n"
         return
 
     engine = OpenAITabbyEngine()
 
     async for output in engine.generate(job_input):
-        # Ensure that only JSON strings are yielded without 'data: ' prefixes
         if isinstance(output, dict):
             # Convert dict to JSON string
             yield json.dumps(output) + "\n\n"
         else:
-            # If output is already a JSON string, ensure it ends with double newline
+            # If output is already a string, ensure it ends with double newline
             yield f"{output}\n\n"
 
 # Initialize request rate tracking
@@ -186,9 +198,9 @@ def adjust_concurrency(current_concurrency):
 
     return current_concurrency
 
-if __name__ == "__main__":
+async def main():
     try:
-        wait_for_service('http://127.0.0.1:5000/health')
+        await wait_for_service('http://127.0.0.1:5000/health')
     except Exception as e:
         print("Service failed to start:", str(e))
         exit(1)
@@ -197,8 +209,11 @@ if __name__ == "__main__":
 
     runpod.serverless.start(
         {
-            "handler": async_generator_handler,         # Use the asynchronous handler
-            "concurrency_modifier": adjust_concurrency, # Add the concurrency modifier
-            "return_aggregate_stream": False,          # As per your working configuration
+            "handler": handler,
+            "return_aggregate_stream": False,
+            "concurrency_modifier": adjust_concurrency,
         }
     )
+
+if __name__ == "__main__":
+    asyncio.run(main())

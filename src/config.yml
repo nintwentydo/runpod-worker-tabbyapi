@@ -113,7 +113,7 @@ model:
   # Size of the prompt cache to allocate (default: max_seq_len).
   # Must be a multiple of 256 and can't be less than max_seq_len.
   # For CFG, set this to 2 * max_seq_len.
-  cache_size: 131072
+  cache_size: 262144
 
   # Chunk size for prompt ingestion (default: 2048).
   # A lower value reduces VRAM usage but decreases ingestion speed.
