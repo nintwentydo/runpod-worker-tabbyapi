@@ -59,7 +59,7 @@ class OpenAITabbyEngine:
             async for response in self._handle_generation_request(route, data, headers):
                 yield response
         else:
-            yield {"error": f"Unsupported route: {route}"}
+            yield json.dumps({"error": f"Unsupported route: {route}"}) + "\n"
 
     async def _handle_generic_request(self, route, data=None, method='GET', headers=None):
         endpoint = self.base_url + route
@@ -68,21 +68,21 @@ class OpenAITabbyEngine:
                 if method == 'GET':
                     async with session.get(endpoint, headers=headers, timeout=300) as response:
                         if response.status != 200:
-                            yield {"error": await response.text()}
+                            yield json.dumps({"error": await response.text()}) + "\n"
                             return
                         result = await response.json()
-                        yield result
+                        yield json.dumps(result) + "\n"
                 elif method == 'POST':
                     async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                         if response.status != 200:
-                            yield {"error": await response.text()}
+                            yield json.dumps({"error": await response.text()}) + "\n"
                             return
                         result = await response.json()
-                        yield result
+                        yield json.dumps(result) + "\n"
                 else:
-                    yield {"error": f"Unsupported HTTP method: {method}"}
+                    yield json.dumps({"error": f"Unsupported HTTP method: {method}"}) + "\n"
             except Exception as e:
-                yield {"error": str(e)}
+                yield json.dumps({"error": str(e)}) + "\n"
 
     async def _handle_generation_request(self, route, data, headers):
         endpoint = self.base_url + route
@@ -99,23 +99,24 @@ class OpenAITabbyEngine:
                         async for line in response.content:
                             try:
                                 decoded_line = line.decode('utf-8').strip()
-                                if decoded_line:
-                                    yield f"{decoded_line}\n"  # No 'data: ' prefix
+                                if decoded_line and not decoded_line.startswith("data: [DONE]"):
+                                    # Only yield JSON lines, RunPod will handle 'data: ' prefix
+                                    yield f"{decoded_line}\n"
                             except Exception as e:
                                 error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
-                                yield f"{error_json}\n"  # No 'data: ' prefix
-                        # Removed: yield "[DONE]\n"  # Let RunPod handle it
+                                yield f"{error_json}\n"
+                        # Do NOT yield "[DONE]\n" here; RunPod handles stream termination
                     else:
                         result = await response.json()
                         yield f"{json.dumps(result)}\n"  # No 'data: ' prefix
             except Exception as e:
                 error_json = json.dumps({"error": str(e)})
-                yield f"{error_json}\n"  # No 'data: ' prefix
+                yield f"{error_json}\n"
 
 async def handler(job):
     job_input = JobInput(job['input'])
     if not job_input.openai_route or not isinstance(job_input.openai_input, (dict, type(None))):
-        yield {"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}
+        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}) + "\n"
         return
 
     engine = OpenAITabbyEngine()
@@ -135,6 +136,6 @@ if __name__ == "__main__":
     runpod.serverless.start(
         {
             "handler": handler,
-            "return_aggregate_stream": True,
+            "return_aggregate_stream": False,  # Changed to False for true streaming
         }
     )
