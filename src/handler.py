@@ -73,25 +73,23 @@ class OpenAITabbyEngine:
                 if method == 'GET':
                     async with session.get(endpoint, headers=headers, timeout=300) as response:
                         if response.status != 200:
-                            yield json.dumps({"error": await response.text()}) + "\n\n"
+                            error_message = await response.text()
+                            yield {"error": error_message}
                             return
-                        raw_result = await response.text()
-                        # Handle stringified JSON
-                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
-                        yield json.dumps(result) + "\n\n"
+                        result = await response.json()
+                        yield result
                 elif method == 'POST':
                     async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                         if response.status != 200:
-                            yield json.dumps({"error": await response.text()}) + "\n\n"
+                            error_message = await response.text()
+                            yield {"error": error_message}
                             return
-                        raw_result = await response.text()
-                        # Handle stringified JSON
-                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
-                        yield json.dumps(result) + "\n\n"
+                        result = await response.json()
+                        yield result
                 else:
-                    yield json.dumps({"error": f"Unsupported HTTP method: {method}"}) + "\n\n"
+                    yield {"error": f"Unsupported HTTP method: {method}"}
             except Exception as e:
-                yield json.dumps({"error": str(e)}) + "\n\n"
+                yield {"error": str(e)}
 
     async def _handle_generation_request(self, route, data, headers):
         endpoint = self.base_url + route
@@ -100,8 +98,8 @@ class OpenAITabbyEngine:
             try:
                 async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                     if response.status != 200:
-                        error_json = json.dumps({"error": await response.text()})
-                        yield f"{error_json}\n\n"
+                        error_message = await response.text()
+                        yield {"error": error_message}
                         return
 
                     if stream:
@@ -129,13 +127,11 @@ class OpenAITabbyEngine:
                                 logger.error(f"Error decoding line: {error_json}")
                                 yield f"{error_json}"
                     else:
-                        raw_result = await response.text()
-                        # Handle stringified JSON
-                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
-                        yield f"{json.dumps(result)}"
+                        result = await response.json()
+                        yield result
             except Exception as e:
-                error_json = json.dumps({"error": str(e)})
-                yield f"{error_json}"
+                yield {"error": str(e)}
+
 
 async def handler(job):
     job_input = JobInput(job['input'])
@@ -146,14 +142,12 @@ async def handler(job):
     engine = OpenAITabbyEngine()
 
     async for output in engine.generate(job_input):
-        # Ensure that only JSON strings are yielded with proper SSE formatting
         if isinstance(output, dict):
             json_str = json.dumps(output)
             yield f"{json_str}\n\n"
         elif isinstance(output, str):
             yield f"{output}\n\n"
         else:
-            # Handle unexpected output types
             yield f"{json.dumps({'error': 'Unexpected output type'})}\n\n"
 
 if __name__ == "__main__":
