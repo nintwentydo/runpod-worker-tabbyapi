@@ -91,40 +91,25 @@ class OpenAITabbyEngine:
             try:
                 async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                     if response.status != 200:
-                        yield {"error": await response.text()}
+                        yield f"data: {{\"error\": \"{await response.text()}\"}}\n"
                         return
 
                     if stream:
                         async for line in response.content:
                             try:
-                                # Decode the streamed bytes and ensure they are JSON-compatible
                                 decoded_line = line.decode('utf-8').strip()
-
-                                if not decoded_line:
-                                    continue  # Skip empty lines
-
-                                if decoded_line.startswith("data: "):
-                                    # Remove the "data: " prefix
-                                    cleaned_line = decoded_line[len("data: "):]
-
-                                    if cleaned_line == "[DONE]":
-                                        yield {"done": True}
-                                    else:
-                                        # Parse as JSON if possible, otherwise yield as-is
-                                        try:
-                                            json_data = json.loads(cleaned_line)
-                                            yield json_data
-                                        except json.JSONDecodeError:
-                                            yield {"data": cleaned_line}
-                                else:
-                                    yield {"data": decoded_line}
+                                if decoded_line:
+                                    yield f"data: {decoded_line}\n"
                             except Exception as e:
-                                yield {"error": f"Failed to decode stream data: {str(e)}"}
+                                yield f"data: {{\"error\": \"Failed to decode stream data: {str(e)}\"}}\n"
+                        # End of stream
+                        yield "data: [DONE]\n"
                     else:
                         result = await response.json()
-                        yield result
+                        yield f"data: {json.dumps(result)}\n"
             except Exception as e:
-                yield {"error": str(e)}
+                yield f"data: {{\"error\": \"{str(e)}\"}}\n"
+
 
 async def handler(job):
     job_input = JobInput(job['input'])
