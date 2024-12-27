@@ -64,7 +64,7 @@ class OpenAITabbyEngine:
             async for response in self._handle_generation_request(route, data, headers):
                 yield response
         else:
-            yield json.dumps({"error": f"Unsupported route: {route}"}) + "\n\n"
+            yield {"error": f"Unsupported route: {route}"}
 
     async def _handle_generic_request(self, route, data=None, method='GET', headers=None):
         endpoint = self.base_url + route
@@ -136,25 +136,21 @@ class OpenAITabbyEngine:
 async def handler(job):
     job_input = JobInput(job['input'])
     if not job_input.openai_route or not isinstance(job_input.openai_input, (dict, type(None))):
-        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}) + "\n\n"
+        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"})
         return
 
     engine = OpenAITabbyEngine()
 
     async for output in engine.generate(job_input):
         if isinstance(output, dict):
-            # Directly yield the dictionary as JSON
-            yield json.dumps(output) + "\n\n"
+            # For non-streaming responses, yield the JSON string without additional line breaks
+            json_str = json.dumps(output)
+            yield json_str
         elif isinstance(output, str):
-            # Attempt to parse JSON strings to avoid escaping issues
-            try:
-                parsed_output = json.loads(output)
-                yield json.dumps(parsed_output) + "\n\n"
-            except json.JSONDecodeError:
-                # If it's not valid JSON, yield the raw string
-                yield output + "\n\n"
+            # For streaming responses, continue yielding as is
+            yield f"{output}\n\n"
         else:
-            yield json.dumps({"error": "Unexpected output type"}) + "\n\n"
+            yield json.dumps({'error': 'Unexpected output type'})
 
 if __name__ == "__main__":
     try:
@@ -168,6 +164,6 @@ if __name__ == "__main__":
     runpod.serverless.start(
         {
             "handler": handler,
-            "return_aggregate_stream": True,
+            "return_aggregate_stream": True,  # Keep this as True to support streaming
         }
     )
