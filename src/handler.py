@@ -97,9 +97,14 @@ class OpenAITabbyEngine:
                     if stream:
                         async for line in response.content:
                             try:
+                                # Decode the streamed bytes
                                 decoded_line = line.decode('utf-8').strip()
                                 if decoded_line:
-                                    yield f"data: {decoded_line}\n"
+                                    # Prefix with "data:" exactly once
+                                    if not decoded_line.startswith("data: "):
+                                        yield f"data: {decoded_line}\n"
+                                    else:
+                                        yield f"{decoded_line}\n"
                             except Exception as e:
                                 yield f"data: {{\"error\": \"Failed to decode stream data: {str(e)}\"}}\n"
                         # End of stream
@@ -109,7 +114,6 @@ class OpenAITabbyEngine:
                         yield f"data: {json.dumps(result)}\n"
             except Exception as e:
                 yield f"data: {{\"error\": \"{str(e)}\"}}\n"
-
 
 async def handler(job):
     job_input = JobInput(job['input'])
