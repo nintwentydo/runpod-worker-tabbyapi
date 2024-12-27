@@ -16,7 +16,7 @@ WORKDIR /app
 #COPY src/models/pixtral-12b-exl2-8.0bpw /app/models/pixtral-12b-exl2-8.0bpw
 
 # Upgrade pip
-RUN pip3.11 install --no-cache-dir -r builder/requirements.txt
+RUN pip3.11 install --no-cache-dir -r /builder/requirements.txt
 
 # Update repo
 RUN if [ ${DO_PULL} ]; then \
@@ -30,13 +30,13 @@ RUN if [ ${DO_PULL} ]; then \
 RUN pip3.11 install --no-cache-dir .[cu121,extras]
 
 # Copy the sample configuration and adjust the host to 0.0.0.0
-RUN cp -av src/config.yml /app/models/config.yml
+RUN cp -av /src/config.yml /app/models/config.yml
 
 # Copy the handler.py script into the container
-COPY src/handler.py /app/handler.py
+COPY /src/handler.py /app/handler.py
 
 # Copy the start.sh script and make it executable
-COPY src/start.sh /app/start.sh
+COPY /src/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
 # Set the command to run when the container starts
