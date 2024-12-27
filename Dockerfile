@@ -13,7 +13,7 @@ ENV DO_PULL $DO_PULL
 WORKDIR /app
 
 # Copy model
-#COPY src/models/pixtral-12b-exl2-8.0bpw /app/models/pixtral-12b-exl2-8.0bpw
+COPY src/models/pixtral-12b-exl2-8.0bpw /app/models/pixtral-12b-exl2-8.0bpw
 
 # Install requirements
 COPY builder/requirements.txt /app/requirements.txt

@@ -12,17 +12,24 @@ logger = logging.getLogger(__name__)
 
 def wait_for_service(url, max_retries=1000, delay=0.5):
     retries = 0
+    retry_interval = 10  # Log every 10 retries (adjust as needed)
+    
     while retries < max_retries:
         try:
             response = requests.get(url)
             if response.status_code == 200:
+                logging.info(f"Service is ready at {url} after {retries} retries.")
                 return
-            else:
-                print(f"Service status code: {response.status_code}. Retrying...")
-        except requests.exceptions.RequestException:
-            print("Service not ready yet. Retrying...")
+            elif retries % retry_interval == 0:  # Log status code every 10 retries
+                logging.warning(f"Service status code: {response.status_code}. Retrying...")
+        except requests.exceptions.RequestException as e:
+            if retries % retry_interval == 0:  # Log exceptions every 10 retries
+                logging.warning(f"Service not ready yet. Retrying... Error: {str(e)}")
+        
         time.sleep(delay)
         retries += 1
+
+    logging.error(f"Service at {url} not available after {max_retries} retries.")
     raise Exception("Service not available after max retries.")
 
 class JobInput:
@@ -117,10 +124,10 @@ class OpenAITabbyEngine:
                                             if data_content == "data: [DONE]":
                                                 yield f"{data_content}"
                                                 continue
-                                            logger.info(f"Yielding data: {data_content}")
+                                            #logger.info(f"Yielding data: {data_content}")
                                             yield f"{data_content}"
                                         else:
-                                            logger.warning(f"Unexpected SSE format: {line}")
+                                            logger.warning(f"Unexpected SSE format")
                                             yield f"{line}"
                             except Exception as e:
                                 error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
@@ -131,7 +138,6 @@ class OpenAITabbyEngine:
                         yield result
             except Exception as e:
                 yield {"error": str(e)}
-
 
 async def handler(job):
     job_input = JobInput(job['input'])
@@ -151,18 +157,23 @@ async def handler(job):
         else:
             yield {"error": "Unexpected output type"}
 
+def concurrency_modifier(currenct_concurrency):
+    max_concurrency = os.getenv("MAX_CONCURRENCY", 10)
+    return int(max_concurrency)
+
 if __name__ == "__main__":
     try:
         wait_for_service('http://127.0.0.1:5000/health')
     except Exception as e:
-        print("Service failed to start:", str(e))
+        logging.error(f"Service failed to start: {str(e)}")
         exit(1)
 
-    print("TabbyAPI Service is ready. Starting RunPod...")
+    logging.info("TabbyAPI Service is ready. Starting RunPod...")
 
     runpod.serverless.start(
         {
             "handler": handler,
-            "return_aggregate_stream": True,  # Keep this as True to support streaming
+            "concurrency_modifier": concurrency_modifier,
+            "return_aggregate_stream": True
         }
     )

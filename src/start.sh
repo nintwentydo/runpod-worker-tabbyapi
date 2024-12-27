@@ -11,7 +11,7 @@ set -uxo pipefail
 # Start handler.py
 (
   cd /app
-  python3.11 -u handler.py
+  python3.11 -u handler.py --rp_log_level ERROR
 ) &
 
 set +x
