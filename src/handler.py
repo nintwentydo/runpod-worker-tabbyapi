@@ -111,8 +111,9 @@ class OpenAITabbyEngine:
                                     line = line.strip()
                                     if line:
                                         if line.startswith("data: "):
-                                            data_content = line[6:]
-                                            if data_content == "[DONE]":
+                                            data_content = line
+                                            if data_content == "data: [DONE]":
+                                                yield f"{data_content}"
                                                 continue
                                             logger.info(f"Yielding data: {data_content}")
                                             yield f"{data_content}"
