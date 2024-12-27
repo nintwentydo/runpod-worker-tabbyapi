@@ -75,14 +75,18 @@ class OpenAITabbyEngine:
                         if response.status != 200:
                             yield json.dumps({"error": await response.text()}) + "\n\n"
                             return
-                        result = await response.json()
+                        raw_result = await response.text()
+                        # Handle stringified JSON
+                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
                         yield json.dumps(result) + "\n\n"
                 elif method == 'POST':
                     async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                         if response.status != 200:
                             yield json.dumps({"error": await response.text()}) + "\n\n"
                             return
-                        result = await response.json()
+                        raw_result = await response.text()
+                        # Handle stringified JSON
+                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
                         yield json.dumps(result) + "\n\n"
                 else:
                     yield json.dumps({"error": f"Unsupported HTTP method: {method}"}) + "\n\n"
@@ -125,7 +129,9 @@ class OpenAITabbyEngine:
                                 logger.error(f"Error decoding line: {error_json}")
                                 yield f"{error_json}"
                     else:
-                        result = await response.json()
+                        raw_result = await response.text()
+                        # Handle stringified JSON
+                        result = json.loads(raw_result) if raw_result.startswith('"') and raw_result.endswith('"') else json.loads(raw_result)
                         yield f"{json.dumps(result)}"
             except Exception as e:
                 error_json = json.dumps({"error": str(e)})
