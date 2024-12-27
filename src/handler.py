@@ -143,12 +143,18 @@ async def handler(job):
 
     async for output in engine.generate(job_input):
         if isinstance(output, dict):
-            json_str = json.dumps(output)
-            yield f"{json_str}\n\n"
+            # Directly yield the dictionary as JSON
+            yield json.dumps(output) + "\n\n"
         elif isinstance(output, str):
-            yield f"{output}\n\n"
+            # Attempt to parse JSON strings to avoid escaping issues
+            try:
+                parsed_output = json.loads(output)
+                yield json.dumps(parsed_output) + "\n\n"
+            except json.JSONDecodeError:
+                # If it's not valid JSON, yield the raw string
+                yield output + "\n\n"
         else:
-            yield f"{json.dumps({'error': 'Unexpected output type'})}\n\n"
+            yield json.dumps({"error": "Unexpected output type"}) + "\n\n"
 
 if __name__ == "__main__":
     try:
