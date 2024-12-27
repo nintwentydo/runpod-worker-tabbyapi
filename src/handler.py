@@ -136,21 +136,20 @@ class OpenAITabbyEngine:
 async def handler(job):
     job_input = JobInput(job['input'])
     if not job_input.openai_route or not isinstance(job_input.openai_input, (dict, type(None))):
-        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"})
+        yield {"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}
         return
 
     engine = OpenAITabbyEngine()
 
     async for output in engine.generate(job_input):
         if isinstance(output, dict):
-            # For non-streaming responses, yield the JSON string without additional line breaks
-            json_str = json.dumps(output)
-            yield json_str
+            # For non-streaming responses, yield the raw JSON object
+            yield output
         elif isinstance(output, str):
-            # For streaming responses, continue yielding as is
+            # For streaming responses, yield as plain strings
             yield f"{output}\n\n"
         else:
-            yield json.dumps({'error': 'Unexpected output type'})
+            yield {"error": "Unexpected output type"}
 
 if __name__ == "__main__":
     try:
