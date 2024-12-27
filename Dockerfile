@@ -31,7 +31,7 @@ RUN if [ ${DO_PULL} ]; then \
 RUN pip3.11 install --no-cache-dir .[cu121,extras]
 
 # Copy the sample configuration and adjust the host to 0.0.0.0
-COPY src/config.yml /app/models/config.yml
+COPY src/config.yml /app/config.yml
 
 # Copy the handler.py script into the container
 COPY src/handler.py /app/handler.py
