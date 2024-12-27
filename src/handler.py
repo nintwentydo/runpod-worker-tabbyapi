@@ -115,20 +115,20 @@ class OpenAITabbyEngine:
                                             if data_content == "[DONE]":
                                                 continue
                                             logger.info(f"Yielding data: {data_content}")
-                                            yield f"{data_content}\n\n"
+                                            yield f"{data_content}"
                                         else:
                                             logger.warning(f"Unexpected SSE format: {line}")
-                                            yield f"{line}\n\n"
+                                            yield f"{line}"
                             except Exception as e:
                                 error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
                                 logger.error(f"Error decoding line: {error_json}")
-                                yield f"{error_json}\n\n"
+                                yield f"{error_json}"
                     else:
                         result = await response.json()
-                        yield f"{json.dumps(result)}\n\n"
+                        yield f"{json.dumps(result)}"
             except Exception as e:
                 error_json = json.dumps({"error": str(e)})
-                yield f"{error_json}\n\n"
+                yield f"{error_json}"
 
 async def handler(job):
     job_input = JobInput(job['input'])
@@ -161,6 +161,6 @@ if __name__ == "__main__":
     runpod.serverless.start(
         {
             "handler": handler,
-            "return_aggregate_stream": False,
+            "return_aggregate_stream": True,
         }
     )
