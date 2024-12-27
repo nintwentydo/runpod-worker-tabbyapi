@@ -95,12 +95,19 @@ class OpenAITabbyEngine:
 
                     if stream:
                         async for line in response.content:
-                            yield line
+                            try:
+                                # Decode the streamed bytes and ensure they are JSON-compatible
+                                decoded_line = line.decode('utf-8').strip()
+                                if decoded_line:  # Avoid empty lines
+                                    yield {"data": decoded_line} if not decoded_line == "[DONE]" else {"done": True}
+                            except Exception as e:
+                                yield {"error": f"Failed to decode stream data: {str(e)}"}
                     else:
                         result = await response.json()
                         yield result
             except Exception as e:
                 yield {"error": str(e)}
+
 
 async def handler(job):
     job_input = JobInput(job['input'])
