@@ -4,35 +4,24 @@ import time
 import requests
 import aiohttp
 import runpod
-import asyncio
-import atexit
 import logging
-from collections import deque
 
-# Configure logging
+# Configure asynchronous logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize a global aiohttp ClientSession
-session = aiohttp.ClientSession()
-
-async def close_session():
-    await session.close()
-
-# Register the close_session coroutine to run on exit
-atexit.register(lambda: asyncio.get_event_loop().run_until_complete(close_session()))
-
-async def wait_for_service(url, max_retries=1000, delay=0.5):
+def wait_for_service(url, max_retries=1000, delay=0.5):
     retries = 0
     while retries < max_retries:
         try:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    return
-                else:
-                    print(f"Service status code: {response.status}. Retrying...")
-        except aiohttp.ClientError:
+            response = requests.get(url)
+            if response.status_code == 200:
+                return
+            else:
+                print(f"Service status code: {response.status_code}. Retrying...")
+        except requests.exceptions.RequestException:
             print("Service not ready yet. Retrying...")
-        await asyncio.sleep(delay)
+        time.sleep(delay)
         retries += 1
     raise Exception("Service not available after max retries.")
 
@@ -75,132 +64,94 @@ class OpenAITabbyEngine:
             async for response in self._handle_generation_request(route, data, headers):
                 yield response
         else:
-            error_message = {"error": f"Unsupported route: {route}"}
-            yield json.dumps(error_message) + "\n\n"
+            yield json.dumps({"error": f"Unsupported route: {route}"}) + "\n\n"
 
     async def _handle_generic_request(self, route, data=None, method='GET', headers=None):
         endpoint = self.base_url + route
-        try:
-            if method == 'GET':
-                async with session.get(endpoint, headers=headers, timeout=300) as response:
-                    if response.status != 200:
-                        error_json = {"error": await response.text()}
-                        yield json.dumps(error_json) + "\n\n"
-                        return
-                    result = await response.json()
-                    yield json.dumps(result) + "\n\n"
-            elif method == 'POST':
-                async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
-                    if response.status != 200:
-                        error_json = {"error": await response.text()}
-                        yield json.dumps(error_json) + "\n\n"
-                        return
-                    result = await response.json()
-                    yield json.dumps(result) + "\n\n"
-            else:
-                error_json = {"error": f"Unsupported HTTP method: {method}"}
-                yield json.dumps(error_json) + "\n\n"
-        except Exception as e:
-            error_json = {"error": str(e)}
-            yield json.dumps(error_json) + "\n\n"
+        async with aiohttp.ClientSession() as session:
+            try:
+                if method == 'GET':
+                    async with session.get(endpoint, headers=headers, timeout=300) as response:
+                        if response.status != 200:
+                            yield json.dumps({"error": await response.text()}) + "\n\n"
+                            return
+                        result = await response.json()
+                        yield json.dumps(result) + "\n\n"
+                elif method == 'POST':
+                    async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
+                        if response.status != 200:
+                            yield json.dumps({"error": await response.text()}) + "\n\n"
+                            return
+                        result = await response.json()
+                        yield json.dumps(result) + "\n\n"
+                else:
+                    yield json.dumps({"error": f"Unsupported HTTP method: {method}"}) + "\n\n"
+            except Exception as e:
+                yield json.dumps({"error": str(e)}) + "\n\n"
 
     async def _handle_generation_request(self, route, data, headers):
         endpoint = self.base_url + route
         stream = data.get('stream', False)
-        try:
-            async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
-                if response.status != 200:
-                    error_json = {"error": await response.text()}
-                    yield json.dumps(error_json) + "\n\n"
-                    return
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
+                    if response.status != 200:
+                        error_json = json.dumps({"error": await response.text()})
+                        yield f"{error_json}\n\n"
+                        return
 
-                if stream:
-                    async for line in response.content:
-                        try:
-                            decoded_line = line.decode('utf-8').strip()
-                            if decoded_line:
-                                # Check if the line starts with "data: "
-                                if decoded_line.startswith("data: "):
-                                    data_content = decoded_line[6:]
-                                    if data_content == "[DONE]":
-                                        continue  # Let RunPod handle '[DONE]'
-                                    yield f"{data_content}\n\n"
-                                else:
-                                    # For any other lines, yield as is
-                                    yield f"{decoded_line}\n\n"
-                        except Exception as e:
-                            error_json = {"error": f"Failed to decode stream data: {str(e)}"}
-                            yield json.dumps(error_json) + "\n\n"
-                else:
-                    result = await response.json()
-                    yield json.dumps(result) + "\n\n"
-        except Exception as e:
-            error_json = {"error": str(e)}
-            yield json.dumps(error_json) + "\n\n"
+                    if stream:
+                        buffer = ""
+                        async for chunk in response.content.iter_any():
+                            try:
+                                decoded_chunk = chunk.decode('utf-8')
+                                buffer += decoded_chunk
+                                while '\n' in buffer:
+                                    line, buffer = buffer.split('\n', 1)
+                                    line = line.strip()
+                                    if line:
+                                        if line.startswith("data: "):
+                                            data_content = line[6:]
+                                            if data_content == "[DONE]":
+                                                continue
+                                            logger.info(f"Yielding data: {data_content}")
+                                            yield f"{data_content}\n\n"
+                                        else:
+                                            logger.warning(f"Unexpected SSE format: {line}")
+                                            yield f"{line}\n\n"
+                            except Exception as e:
+                                error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
+                                logger.error(f"Error decoding line: {error_json}")
+                                yield f"{error_json}\n\n"
+                    else:
+                        result = await response.json()
+                        yield f"{json.dumps(result)}\n\n"
+            except Exception as e:
+                error_json = json.dumps({"error": str(e)})
+                yield f"{error_json}\n\n"
 
 async def handler(job):
     job_input = JobInput(job['input'])
     if not job_input.openai_route or not isinstance(job_input.openai_input, (dict, type(None))):
-        error_message = {"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}
-        yield json.dumps(error_message) + "\n\n"
+        yield json.dumps({"error": "Invalid input: missing 'openai_route' or 'openai_input' must be a dictionary or None"}) + "\n\n"
         return
 
     engine = OpenAITabbyEngine()
 
     async for output in engine.generate(job_input):
+        # Ensure that only JSON strings are yielded with proper SSE formatting
         if isinstance(output, dict):
-            # Convert dict to JSON string
-            yield json.dumps(output) + "\n\n"
-        else:
-            # If output is already a string, ensure it ends with double newline
+            json_str = json.dumps(output)
+            yield f"{json_str}\n\n"
+        elif isinstance(output, str):
             yield f"{output}\n\n"
+        else:
+            # Handle unexpected output types
+            yield f"{json.dumps({'error': 'Unexpected output type'})}\n\n"
 
-# Initialize request rate tracking
-request_timestamps = deque()
-
-def update_request_rate():
-    """
-    Implement a method to accurately track the request rate.
-    Using a sliding window of 60 seconds.
-    """
-    global request_rate
-    current_time = time.time()
-    window_start = current_time - 60  # 60-second window
-
-    # Remove timestamps older than the window
-    while request_timestamps and request_timestamps[0] < window_start:
-        request_timestamps.popleft()
-
-    # This function should be called at the start of each request
-    # For demonstration, we'll simulate by incrementing
-    request_timestamps.append(current_time)
-
-    # Update the global request rate
-    request_rate = len(request_timestamps)
-
-def adjust_concurrency(current_concurrency):
-    """
-    Dynamically adjusts the concurrency level based on the observed request rate.
-    """
-    global request_rate
-    update_request_rate()  # Update 'request_rate'
-
-    max_concurrency = 10  # Maximum allowable concurrency
-    min_concurrency = 1   # Minimum concurrency to maintain
-    high_request_rate_threshold = 50  # Threshold for high request volume
-
-    # Increase concurrency if under max limit and request rate is high
-    if (request_rate > high_request_rate_threshold and current_concurrency < max_concurrency):
-        return current_concurrency + 1
-    # Decrease concurrency if above min limit and request rate is low
-    elif (request_rate <= high_request_rate_threshold and current_concurrency > min_concurrency):
-        return current_concurrency - 1
-
-    return current_concurrency
-
-async def main():
+if __name__ == "__main__":
     try:
-        await wait_for_service('http://127.0.0.1:5000/health')
+        wait_for_service('http://127.0.0.1:5000/health')
     except Exception as e:
         print("Service failed to start:", str(e))
         exit(1)
@@ -211,9 +162,5 @@ async def main():
         {
             "handler": handler,
             "return_aggregate_stream": False,
-            "concurrency_modifier": adjust_concurrency,
         }
     )
-
-if __name__ == "__main__":
-    asyncio.run(main())
