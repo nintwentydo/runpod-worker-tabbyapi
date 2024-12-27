@@ -95,19 +95,15 @@ class OpenAITabbyEngine:
                         return
 
                     if stream:
+                        # Process each line in the response content
                         async for line in response.content:
                             try:
-                                # Decode the streamed bytes
                                 decoded_line = line.decode('utf-8').strip()
-                                if decoded_line:
-                                    # Prefix with "data:" exactly once
-                                    if not decoded_line.startswith("data: "):
-                                        yield f"data: {decoded_line}\n"
-                                    else:
-                                        yield f"{decoded_line}\n"
+                                if decoded_line:  # Only process non-empty lines
+                                    yield f"data: {decoded_line}\n"
                             except Exception as e:
                                 yield f"data: {{\"error\": \"Failed to decode stream data: {str(e)}\"}}\n"
-                        # End of stream
+                        # Send the end-of-stream marker once
                         yield "data: [DONE]\n"
                     else:
                         result = await response.json()
