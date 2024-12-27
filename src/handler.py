@@ -91,25 +91,27 @@ class OpenAITabbyEngine:
             try:
                 async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                     if response.status != 200:
-                        yield f"data: {{\"error\": \"{await response.text()}\"}}\n"
+                        error_json = json.dumps({"error": await response.text()})
+                        yield f"{error_json}\n"  # Removed 'data: ' prefix
                         return
 
                     if stream:
-                        # Process each line in the response content
                         async for line in response.content:
                             try:
                                 decoded_line = line.decode('utf-8').strip()
-                                if decoded_line:  # Only process non-empty lines
-                                    yield f"data: {decoded_line}\n"
+                                if decoded_line:
+                                    yield f"{decoded_line}\n"  # Removed 'data: ' prefix
                             except Exception as e:
-                                yield f"data: {{\"error\": \"Failed to decode stream data: {str(e)}\"}}\n"
-                        # Send the end-of-stream marker once
-                        yield "data: [DONE]\n"
+                                error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
+                                yield f"{error_json}\n"  # Removed 'data: ' prefix
+                        # End of stream
+                        yield "[DONE]\n"  # Removed 'data: ' prefix
                     else:
                         result = await response.json()
-                        yield f"data: {json.dumps(result)}\n"
+                        yield f"{json.dumps(result)}\n"  # Removed 'data: ' prefix
             except Exception as e:
-                yield f"data: {{\"error\": \"{str(e)}\"}}\n"
+                error_json = json.dumps({"error": str(e)})
+                yield f"{error_json}\n"  # Removed 'data: ' prefix
 
 async def handler(job):
     job_input = JobInput(job['input'])
