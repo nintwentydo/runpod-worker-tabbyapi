@@ -49,7 +49,7 @@ logging:
 model:
   # Directory to look for models (default: models).
   # Windows users, do NOT put this path in quotes!
-  model_dir: /runpod-volume
+  model_dir: /app/models
 
   # Allow direct loading of models from a completion or chat completion request (default: False).
   # This method of loading is strict by default.
