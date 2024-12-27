@@ -7,7 +7,7 @@ import runpod
 import logging
 
 # Configure asynchronous logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 def wait_for_service(url, max_retries=1000, delay=0.5):
