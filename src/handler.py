@@ -92,7 +92,7 @@ class OpenAITabbyEngine:
                 async with session.post(endpoint, json=data, headers=headers, timeout=300) as response:
                     if response.status != 200:
                         error_json = json.dumps({"error": await response.text()})
-                        yield f"{error_json}\n"  # Removed 'data: ' prefix
+                        yield f"{error_json}\n"  # No 'data: ' prefix
                         return
 
                     if stream:
@@ -100,18 +100,17 @@ class OpenAITabbyEngine:
                             try:
                                 decoded_line = line.decode('utf-8').strip()
                                 if decoded_line:
-                                    yield f"{decoded_line}\n"  # Removed 'data: ' prefix
+                                    yield f"{decoded_line}\n"  # No 'data: ' prefix
                             except Exception as e:
                                 error_json = json.dumps({"error": f"Failed to decode stream data: {str(e)}"})
-                                yield f"{error_json}\n"  # Removed 'data: ' prefix
-                        # End of stream
-                        yield "[DONE]\n"  # Removed 'data: ' prefix
+                                yield f"{error_json}\n"  # No 'data: ' prefix
+                        # Removed: yield "[DONE]\n"  # Let RunPod handle it
                     else:
                         result = await response.json()
-                        yield f"{json.dumps(result)}\n"  # Removed 'data: ' prefix
+                        yield f"{json.dumps(result)}\n"  # No 'data: ' prefix
             except Exception as e:
                 error_json = json.dumps({"error": str(e)})
-                yield f"{error_json}\n"  # Removed 'data: ' prefix
+                yield f"{error_json}\n"  # No 'data: ' prefix
 
 async def handler(job):
     job_input = JobInput(job['input'])
