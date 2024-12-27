@@ -98,8 +98,25 @@ class OpenAITabbyEngine:
                             try:
                                 # Decode the streamed bytes and ensure they are JSON-compatible
                                 decoded_line = line.decode('utf-8').strip()
-                                if decoded_line:  # Avoid empty lines
-                                    yield {"data": decoded_line} if not decoded_line == "[DONE]" else {"done": True}
+
+                                if not decoded_line:
+                                    continue  # Skip empty lines
+
+                                if decoded_line.startswith("data: "):
+                                    # Remove the "data: " prefix
+                                    cleaned_line = decoded_line[len("data: "):]
+
+                                    if cleaned_line == "[DONE]":
+                                        yield {"done": True}
+                                    else:
+                                        # Parse as JSON if possible, otherwise yield as-is
+                                        try:
+                                            json_data = json.loads(cleaned_line)
+                                            yield json_data
+                                        except json.JSONDecodeError:
+                                            yield {"data": cleaned_line}
+                                else:
+                                    yield {"data": decoded_line}
                             except Exception as e:
                                 yield {"error": f"Failed to decode stream data: {str(e)}"}
                     else:
@@ -107,7 +124,6 @@ class OpenAITabbyEngine:
                         yield result
             except Exception as e:
                 yield {"error": str(e)}
-
 
 async def handler(job):
     job_input = JobInput(job['input'])
